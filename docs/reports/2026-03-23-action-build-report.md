@@ -197,3 +197,16 @@ docker compose config
   - 端口映射 `8000:8000`
   - 挂载 `./models:/models:ro`
   - Ascend 设备映射（`/dev/davinci0`、`/dev/davinci_manager`、`/dev/devmm_svm`、`/dev/hisi_hdc`）
+
+### 提交与推送结果
+
+```bash
+git commit -m "feat: add fastapi http skeleton with compose startup"
+git push origin main
+git rev-parse HEAD
+gh run view 23428972340 -R lim12137/funasr-npu --json databaseId,status,conclusion,url,headSha
+```
+
+- 最新提交：`d391e4b8b01d559d995a20c739ca50ddd72a973f`
+- 推送：成功（`main -> main`）
+- workflow：`Build and Push GHCR Image` run `23428972340`，当前状态 `in_progress`（`conclusion` 为空，仍在执行）
