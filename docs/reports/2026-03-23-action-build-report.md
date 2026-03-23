@@ -82,3 +82,23 @@ failed to fetch anonymous token ... 401 Unauthorized
 ```
 
 结论：Workflow 编排、登录 GHCR、标签生成逻辑均可执行；当前阻塞在基础镜像仓库 `swr.cn-south-1.myhuaweicloud.com` 的匿名拉取鉴权失败。
+
+## 2026-03-23 复核补充（workflow 失败根因评审）
+
+### 复核命令
+
+```bash
+gh run list -R lim12137/funasr-npu --workflow "Build and Push GHCR Image" --limit 10
+gh run view 23420004007 -R lim12137/funasr-npu --log-failed
+gh secret list -R lim12137/funasr-npu
+```
+
+### 复核结论
+
+- 最新失败日志仍定位在 Dockerfile 第 2 行基础镜像拉取鉴权：`failed to fetch anonymous token ... 401 Unauthorized`。
+- `gh secret list -R lim12137/funasr-npu` 当前为空，尚未配置 SWR 登录凭据。
+- 已将 workflow 调整为“可选 SWR 登录”模式，约定 secrets：
+  - `SWR_REGISTRY`
+  - `SWR_USERNAME`
+  - `SWR_PASSWORD`
+- README 已同步补充 SWR secrets 配置说明与缺失时的预期失败行为。
