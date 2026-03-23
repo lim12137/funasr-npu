@@ -16,6 +16,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      SWR_REGISTRY: ${{ secrets.SWR_REGISTRY }}
+      SWR_USERNAME: ${{ secrets.SWR_USERNAME }}
+      SWR_PASSWORD: ${{ secrets.SWR_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,15 +38,15 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to SWR (optional)
-        if: ${{ secrets.SWR_REGISTRY != '' && secrets.SWR_USERNAME != '' && secrets.SWR_PASSWORD != '' }}
+        if: ${{ env.SWR_REGISTRY != '' && env.SWR_USERNAME != '' && env.SWR_PASSWORD != '' }}
         uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.SWR_REGISTRY }}
-          username: ${{ secrets.SWR_USERNAME }}
-          password: ${{ secrets.SWR_PASSWORD }}
+          registry: ${{ env.SWR_REGISTRY }}
+          username: ${{ env.SWR_USERNAME }}
+          password: ${{ env.SWR_PASSWORD }}
 
       - name: Warn when SWR secrets are missing
-        if: ${{ !(secrets.SWR_REGISTRY != '' && secrets.SWR_USERNAME != '' && secrets.SWR_PASSWORD != '') }}
+        if: ${{ env.SWR_REGISTRY == '' || env.SWR_USERNAME == '' || env.SWR_PASSWORD == '' }}
         run: |
           echo "::warning::SWR 登录已跳过：未配置 SWR_REGISTRY / SWR_USERNAME / SWR_PASSWORD。"
           echo "::warning::若基础镜像仓库需要鉴权，构建会在拉取 FROM 镜像阶段返回 401。"
