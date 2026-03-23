@@ -17,6 +17,39 @@ def test_healthz_returns_ok(tmp_path: Path) -> None:
     assert response.json()["status"] == "ok"
 
 
+def test_asr_returns_structured_error_when_upload_dir_creation_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+
+    upload_dir = (tmp_path / "uploads").resolve()
+    monkeypatch.setenv("ASR_UPLOAD_DIR", str(upload_dir))
+
+    app = create_app(model_dir=model_dir)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    original_mkdir = Path.mkdir
+
+    def fake_mkdir(self: Path, *args: object, **kwargs: object) -> None:
+        if self.resolve() == upload_dir:
+            raise OSError("mocked mkdir failure")
+        original_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr("pathlib.Path.mkdir", fake_mkdir)
+
+    response = client.post(
+        "/asr",
+        files={"audio_file": ("mkdir-failed.wav", b"RIFF....", "audio/wav")},
+    )
+
+    assert response.status_code == 500
+    body = response.json()
+    assert body["code"] == "UPLOAD_IO_FAILED"
+    assert "mocked mkdir failure" in body["message"]
+    assert body["engine"] == "funasr-gguf"
+
+
 def test_asr_invokes_real_command_and_cleans_temp_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     model_dir = tmp_path / "models"
     model_dir.mkdir()

@@ -52,6 +52,7 @@ curl -X POST http://127.0.0.1:8000/asr \
 
 失败时返回结构化错误：
 
+- `500`：`UPLOAD_IO_FAILED`（上传文件落盘失败）
 - `502`：`INFERENCE_COMMAND_FAILED`（外部命令退出码非 0）
 - `504`：`INFERENCE_COMMAND_TIMEOUT`（命令超时）
 

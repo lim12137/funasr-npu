@@ -36,16 +36,26 @@ def create_app(model_dir: str | Path | None = None) -> FastAPI:
         onnx_provider: str | None = Form(default=None),
     ) -> JSONResponse | dict[str, object]:
         upload_dir = Path(os.getenv("ASR_UPLOAD_DIR", "/tmp/funasr-upload")).resolve()
-        upload_dir.mkdir(parents=True, exist_ok=True)
-
         suffix = Path(audio_file.filename or "").suffix or ".wav"
-        temp_audio_path = upload_dir / f"{uuid4().hex}{suffix}"
+        temp_audio_path: Path | None = None
 
         try:
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            temp_audio_path = upload_dir / f"{uuid4().hex}{suffix}"
             with temp_audio_path.open("wb") as file_handle:
                 while chunk := await audio_file.read(1024 * 1024):
                     file_handle.write(chunk)
+        except OSError as exc:
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "code": "UPLOAD_IO_FAILED",
+                    "message": f"上传文件落盘失败: {exc}",
+                    "engine": ENGINE_NAME,
+                },
+            )
 
+        try:
             infer_result = _run_asr_command(
                 audio_path=temp_audio_path,
                 model_dir=resolved_model_dir,
@@ -72,7 +82,7 @@ def create_app(model_dir: str | Path | None = None) -> FastAPI:
                 },
             )
         finally:
-            if temp_audio_path.exists():
+            if temp_audio_path and temp_audio_path.exists():
                 try:
                     temp_audio_path.unlink()
                 except OSError:
