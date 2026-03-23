@@ -9,6 +9,9 @@ services:
     environment:
       MODEL_DIR: /models
       PORT: "8000"
+      ASR_ONNX_PROVIDER: CPU
+      ASR_COMMAND_TIMEOUT_SECONDS: "600"
+      ASR_UPLOAD_DIR: /tmp/funasr-upload
     ports:
       - "8000:8000"
     volumes:

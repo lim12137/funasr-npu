@@ -210,3 +210,43 @@ gh run view 23428972340 -R lim12137/funasr-npu --json databaseId,status,conclusi
 - 最新提交：`d391e4b8b01d559d995a20c739ca50ddd72a973f`
 - 推送：成功（`main -> main`）
 - workflow：`Build and Push GHCR Image` run `23428972340`，当前状态 `in_progress`（`conclusion` 为空，仍在执行）
+
+## 2026-03-23 `/asr` 真实推理链路接入记录（按上游现状）
+
+### 路线变更结论
+
+- `todo.txt` 既定路径（`infer.py` / `download_model.py` / `li-plus/llama.cpp@ascend-backend`）已过期。
+- 采用上游当前可用路径：FastAPI 调外部命令，命令脚本内部调用 `HaujetZhao/Fun-ASR-GGUF` 的 `fun_asr_gguf` Python API。
+
+### 上游只读核对命令
+
+```bash
+git ls-remote https://github.com/HaujetZhao/Fun-ASR-GGUF.git HEAD
+git -C D:/Agent/work/_upstream/Fun-ASR-GGUF-20260323b ls-tree -r --name-only HEAD | Select-String -Pattern "infer.py|download_model.py|06-Inference.py|fun_asr_gguf/inference/asr_engine.py"
+git ls-remote --heads https://github.com/li-plus/llama.cpp.git
+curl -L --max-time 30 https://raw.githubusercontent.com/ggml-org/llama.cpp/master/docs/backend/CANN.md | Select-String -Pattern "GGML_CANN|cmake -B build" | Select-Object -First 20
+```
+
+### 上游核对摘要
+
+- Fun-ASR-GGUF `HEAD=02c11cb093af8e01bc6f4580639b3663a41b74c0`。
+- 存在 `06-Inference.py` 与 `fun_asr_gguf/inference/asr_engine.py`；不存在 `infer.py`、`download_model.py`。
+- `li-plus/llama.cpp` 当前分支仅见 `bcast-cuda`、`fix-softmax-cuda`、`master`、`opt-dequant`，无 `ascend-backend`。
+- `ggml-org/llama.cpp` CANN 文档可用，编译选项为 `-DGGML_CANN=on`。
+
+### TDD 与接口验证命令
+
+```bash
+pytest -q
+docker compose config
+```
+
+### 验证结果
+
+- `pytest -q`：`4 passed`。覆盖 `/asr` 命令组装、命令失败错误返回、上传临时文件清理与 `/healthz`。
+- `docker compose config`：通过。确认 `MODEL_DIR=/models`、`ASR_UPLOAD_DIR=/tmp/funasr-upload`、`ASR_COMMAND_TIMEOUT_SECONDS=600` 与 Ascend 设备映射生效。
+
+### 实机推理阻塞与证据
+
+- 当前执行环境未具备 910B 设备与完整模型文件（`/models` 仅挂载约定，未包含必需 onnx/gguf/tokens 文件），无法完成本地 910B 实推。
+- 已完成真实命令链路与错误处理闭环：上传音频 -> 落盘 -> 外部脚本调用 Fun-ASR-GGUF API -> JSON 解析 -> 清理临时文件。

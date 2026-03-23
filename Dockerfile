@@ -3,9 +3,13 @@ FROM ascendai/cann:8.5.0-910b-ubuntu22.04-py3.11
 
 WORKDIR /workspace
 
+ARG FUNASR_GGUF_REPO=https://github.com/HaujetZhao/Fun-ASR-GGUF.git
+ARG FUNASR_GGUF_REF=02c11cb093af8e01bc6f4580639b3663a41b74c0
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     ffmpeg \
+    git \
     libsndfile1 \
     python3 \
     python3-pip \
@@ -18,16 +22,40 @@ ENV ASCEND_TOOLKIT_HOME=/usr/local/Ascend/ascend-toolkit/latest \
     LD_LIBRARY_PATH=/usr/local/Ascend/ascend-toolkit/latest/lib64:${LD_LIBRARY_PATH} \
     PYTHONUNBUFFERED=1 \
     MODEL_DIR=/models \
+    FUNASR_REPO_DIR=/workspace/Fun-ASR-GGUF \
+    ASR_INFER_SCRIPT=/workspace/scripts/run-funasr-infer.py \
+    ASR_PYTHON_BIN=python3 \
+    ASR_UPLOAD_DIR=/tmp/funasr-upload \
+    ASR_ONNX_PROVIDER=CPU \
+    ASR_COMMAND_TIMEOUT_SECONDS=600 \
     PORT=8000
 
 COPY requirements.txt /workspace/requirements.txt
 RUN python3 -m pip install --no-cache-dir -r /workspace/requirements.txt
+RUN python3 -m pip install --no-cache-dir \
+    numpy \
+    scipy \
+    pydub \
+    gguf \
+    rich \
+    watchdog \
+    pypinyin \
+    srt \
+    onnxruntime
 
 COPY server /workspace/server
 COPY scripts/start-server.sh /workspace/scripts/start-server.sh
+COPY scripts/run-funasr-infer.py /workspace/scripts/run-funasr-infer.py
+COPY scripts/build-llama-cann.sh /workspace/scripts/build-llama-cann.sh
+
+RUN git clone --depth 1 ${FUNASR_GGUF_REPO} /workspace/Fun-ASR-GGUF \
+    && git -C /workspace/Fun-ASR-GGUF fetch --depth 1 origin ${FUNASR_GGUF_REF} \
+    && git -C /workspace/Fun-ASR-GGUF checkout ${FUNASR_GGUF_REF}
 
 RUN chmod +x /workspace/scripts/start-server.sh \
-    && mkdir -p /models
+    && chmod +x /workspace/scripts/run-funasr-infer.py \
+    && chmod +x /workspace/scripts/build-llama-cann.sh \
+    && mkdir -p /models /tmp/funasr-upload
 
 EXPOSE 8000
 
