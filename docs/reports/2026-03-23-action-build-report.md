@@ -102,3 +102,22 @@ gh secret list -R lim12137/funasr-npu
   - `SWR_USERNAME`
   - `SWR_PASSWORD`
 - README 已同步补充 SWR secrets 配置说明与缺失时的预期失败行为。
+
+## 2026-03-23 二次修复与复验记录
+
+### 复验命令
+
+```bash
+gh run view 23420122141 -R lim12137/funasr-npu
+gh run watch 23420161768 -R lim12137/funasr-npu --exit-status
+gh run view 23420161768 -R lim12137/funasr-npu --json databaseId,status,conclusion,url,headSha
+```
+
+### 复验结果
+
+- run `23420122141`：`This run likely failed because of a workflow file issue`（快速失败，无 job 明细）。
+- workflow 已改为用 `env` 变量判定 SWR secrets 是否齐全，避免直接在 `if` 中判断 `secrets.*`。
+- run `23420161768`：workflow 可正常进入 job。
+  - `Log in to SWR (optional)` 被跳过；
+  - `Warn when SWR secrets are missing` 正常输出 warning；
+  - 最终仍在 Dockerfile `FROM` 基础镜像拉取阶段返回 `401 Unauthorized`（与根因一致）。
