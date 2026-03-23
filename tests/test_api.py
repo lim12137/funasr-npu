@@ -50,6 +50,69 @@ def test_asr_returns_structured_error_when_upload_dir_creation_fails(
     assert body["engine"] == "funasr-gguf"
 
 
+def test_asr_cleans_temp_file_when_upload_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+
+    upload_dir = (tmp_path / "uploads").resolve()
+    monkeypatch.setenv("ASR_UPLOAD_DIR", str(upload_dir))
+
+    class FixedUUID:
+        hex = "fixed-audio-id"
+
+    expected_temp_audio_path = upload_dir / "fixed-audio-id.wav"
+    unlink_attempted = False
+
+    app = create_app(model_dir=model_dir)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    original_open = Path.open
+    original_unlink = Path.unlink
+
+    class FailingWriter:
+        def __init__(self, target_path: Path) -> None:
+            self.target_path = target_path
+
+        def __enter__(self) -> "FailingWriter":
+            self.target_path.touch(exist_ok=True)
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
+            return False
+
+        def write(self, _: bytes) -> int:
+            raise OSError("mocked write failure")
+
+    def fake_open(self: Path, mode: str = "r", *args: object, **kwargs: object) -> object:
+        if self.resolve() == expected_temp_audio_path and mode == "wb":
+            return FailingWriter(self)
+        return original_open(self, mode, *args, **kwargs)
+
+    def fake_unlink(self: Path, *args: object, **kwargs: object) -> None:
+        nonlocal unlink_attempted
+        if self.resolve() == expected_temp_audio_path:
+            unlink_attempted = True
+        original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr("server.app.uuid4", lambda: FixedUUID())
+    monkeypatch.setattr("pathlib.Path.open", fake_open)
+    monkeypatch.setattr("pathlib.Path.unlink", fake_unlink)
+
+    response = client.post(
+        "/asr",
+        files={"audio_file": ("write-failed.wav", b"RIFF....", "audio/wav")},
+    )
+
+    assert response.status_code == 500
+    body = response.json()
+    assert body["code"] == "UPLOAD_IO_FAILED"
+    assert "mocked write failure" in body["message"]
+    assert body["engine"] == "funasr-gguf"
+    assert unlink_attempted or not expected_temp_audio_path.exists()
+
+
 def test_asr_invokes_real_command_and_cleans_temp_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     model_dir = tmp_path / "models"
     model_dir.mkdir()

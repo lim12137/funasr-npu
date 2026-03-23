@@ -46,6 +46,11 @@ def create_app(model_dir: str | Path | None = None) -> FastAPI:
                 while chunk := await audio_file.read(1024 * 1024):
                     file_handle.write(chunk)
         except OSError as exc:
+            if temp_audio_path and temp_audio_path.exists():
+                try:
+                    temp_audio_path.unlink()
+                except OSError:
+                    pass
             return JSONResponse(
                 status_code=500,
                 content={
