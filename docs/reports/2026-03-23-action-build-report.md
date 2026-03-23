@@ -146,3 +146,24 @@ gh run view 23420798786 -R lim12137/funasr-npu --json databaseId,event,status,co
 - 推送 `main` 后触发 workflow run `23420798786`，最终 `completed/success`。
 - `Validate public base image (readonly)` 步骤成功，说明 `ascendai/cann:8.5.0-910b-ubuntu22.04-py3.11` 在 GitHub Actions 环境可公开访问。
 - `Build and push` 步骤成功，GHCR 推送链路恢复正常。
+
+## 2026-03-23 最新成功状态对齐（run `23421104179`）
+
+### 对齐命令
+
+```bash
+git -C D:/Agent/work/funasr-npu rev-parse HEAD
+gh run view 23421104179 -R lim12137/funasr-npu --json databaseId,event,status,conclusion,url,headSha,displayTitle,createdAt,updatedAt
+```
+
+### 对齐结果
+
+- 当前 `main` 分支 HEAD：`12bf413d357262d7a3826bb6030cf2a5bbbff1f4`。
+- 最新成功 run：`23421104179`（`event=push`，`status=completed`，`conclusion=success`）。
+- run 对应 `headSha=12bf413d357262d7a3826bb6030cf2a5bbbff1f4`，与当前 HEAD 一致。
+- run 链接：`https://github.com/lim12137/funasr-npu/actions/runs/23421104179`。
+
+### 阶段性结论澄清
+
+- 文档中出现的 SWR/`401 Unauthorized` 相关记录属于历史失败阶段，发生于基础镜像仍指向私有 SWR 仓库时。
+- 在将基础镜像替换为公开镜像后，主链路已恢复并持续成功；当前验收以 run `23421104179` 为准。
