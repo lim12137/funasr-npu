@@ -1,47 +1,43 @@
 # funasr-npu
 
-最小可执行仓库：基于昇腾 910B Runtime 的容器镜像构建，并通过 GitHub Actions 自动推送到 GHCR。
+基于 Ascend 910B 运行时的 FastAPI HTTP 服务骨架，支持通过 `docker compose` 一条命令启动。当前阶段 `/asr` 仅返回占位响应，尚未接入真实推理引擎。
 
-## 镜像地址
+## 一条命令启动
 
-- `ghcr.io/lim12137/funasr-npu`
-
-## 本地构建
+在仓库根目录执行：
 
 ```bash
-docker build -t funasr-npu:local .
+docker compose up --build -d
 ```
 
-## 本地运行（示例）
+> 默认使用 `compose.yaml` 的单卡配置，映射端口 `8000:8000`，并挂载宿主机 `./models` 到容器 `/models`（只读）。
+
+## API 调用示例
+
+健康检查：
 
 ```bash
-docker run --rm -it \
-  --device=/dev/davinci0 \
-  --device=/dev/davinci_manager \
-  --device=/dev/devmm_svm \
-  --device=/dev/hisi_hdc \
-  funasr-npu:local
+curl http://127.0.0.1:8000/healthz
 ```
 
-## GitHub Actions 触发方式
-
-- 推送到默认分支（`main`）会自动触发构建与推送。
-- 在 GitHub 仓库页面手动触发：`Actions` -> `Build and Push GHCR Image` -> `Run workflow`。
-
-## 基础镜像（公开可拉取）
-
-Dockerfile 基础镜像来自：
-
-- `ascendai/cann:8.5.0-910b-ubuntu22.04-py3.11`
-
-该镜像为公开仓库镜像，不需要额外配置 SWR 凭据。Workflow 会在构建前执行只读验证：
+ASR 占位接口：
 
 ```bash
-docker manifest inspect ascendai/cann:8.5.0-910b-ubuntu22.04-py3.11
+curl -X POST http://127.0.0.1:8000/asr \
+  -H "Content-Type: application/json" \
+  -d '{"audio_url":"https://example.com/demo.wav"}'
 ```
 
-## 标签策略
+预期 `/asr` 返回 `501`，响应中包含“当前镜像仅提供服务骨架，未接入真实推理引擎”提示。
 
-- `sha-<commit>`
-- `<branch>`（例如 `main`）
-- `latest`（仅默认分支）
+## Compose 默认配置说明
+
+- 服务名：`funasr-api`
+- 镜像入口：`/workspace/scripts/start-server.sh`（容器启动即拉起 Uvicorn）
+- 设备映射：`/dev/davinci0`、`/dev/davinci_manager`、`/dev/devmm_svm`、`/dev/hisi_hdc`
+- 关键环境变量：`MODEL_DIR=/models`、`PORT=8000`
+
+## 镜像信息
+
+- 基础镜像：`ascendai/cann:8.5.0-910b-ubuntu22.04-py3.11`
+- GHCR：`ghcr.io/lim12137/funasr-npu`

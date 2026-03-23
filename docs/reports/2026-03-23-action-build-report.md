@@ -167,3 +167,33 @@ gh run view 23421104179 -R lim12137/funasr-npu --json databaseId,event,status,co
 
 - 文档中出现的 SWR/`401 Unauthorized` 相关记录属于历史失败阶段，发生于基础镜像仍指向私有 SWR 仓库时。
 - 在将基础镜像替换为公开镜像后，主链路已恢复并持续成功；当前验收以 run `23421104179` 为准。
+
+## 2026-03-23 HTTP API + Compose 骨架落地记录（A1+B1）
+
+### 本次目标
+
+- 以 FastAPI 提供 HTTP API 服务骨架。
+- 通过 `docker compose up --build -d` 一条命令启动服务。
+- 宿主机模型目录挂载到容器 `/models`，并保留 Ascend 单卡设备映射。
+- `/asr` 先返回结构化占位响应，明确未接入真实推理引擎。
+
+### TDD 记录
+
+先添加测试 `tests/test_api.py`，首次执行失败（`ModuleNotFoundError: No module named 'server'`），随后完成服务代码与启动入口实现，再执行测试通过。
+
+### 验证命令
+
+```bash
+pytest -q
+git status --short --branch
+docker compose config
+```
+
+### 结果摘要
+
+- `pytest -q`：`3 passed`。
+- `git status --short --branch`：显示本次改动文件已进入待提交状态，分支为 `main...origin/main`。
+- `docker compose config`：校验通过，确认如下关键配置有效：
+  - 端口映射 `8000:8000`
+  - 挂载 `./models:/models:ro`
+  - Ascend 设备映射（`/dev/davinci0`、`/dev/davinci_manager`、`/dev/devmm_svm`、`/dev/hisi_hdc`）
