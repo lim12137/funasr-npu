@@ -28,22 +28,17 @@ docker run --rm -it \
 - 推送到默认分支（`main`）会自动触发构建与推送。
 - 在 GitHub 仓库页面手动触发：`Actions` -> `Build and Push GHCR Image` -> `Run workflow`。
 
-## SWR 可选登录（用于基础镜像拉取鉴权）
+## 基础镜像（公开可拉取）
 
 Dockerfile 基础镜像来自：
 
-- `swr.cn-south-1.myhuaweicloud.com/ascendhub/ascend-runtime:8.0.rc1-910B-ubuntu22.04`
+- `ascendai/cann:8.5.0-910b-ubuntu22.04-py3.11`
 
-如果该镜像仓库对匿名访问返回 `401 Unauthorized`，请在仓库 `Settings -> Secrets and variables -> Actions` 配置以下 secrets：
+该镜像为公开仓库镜像，不需要额外配置 SWR 凭据。Workflow 会在构建前执行只读验证：
 
-- `SWR_REGISTRY`（例如：`swr.cn-south-1.myhuaweicloud.com`）
-- `SWR_USERNAME`
-- `SWR_PASSWORD`
-
-Workflow 会自动检测这三个 secrets：
-
-- 三者齐全：先登录 SWR，再构建镜像；
-- 任一缺失：跳过 SWR 登录并给出 warning（此时若仓库需要鉴权，构建会在 `FROM` 拉取阶段失败）。
+```bash
+docker manifest inspect ascendai/cann:8.5.0-910b-ubuntu22.04-py3.11
+```
 
 ## 标签策略
 

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM swr.cn-south-1.myhuaweicloud.com/ascendhub/ascend-runtime:8.0.rc1-910B-ubuntu22.04
+FROM ascendai/cann:8.5.0-910b-ubuntu22.04-py3.11
 
 WORKDIR /workspace
 

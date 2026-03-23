@@ -9,6 +9,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: lim12137/funasr-npu
+  BASE_IMAGE: ascendai/cann:8.5.0-910b-ubuntu22.04-py3.11
 
 jobs:
   build-and-push:
@@ -16,10 +17,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    env:
-      SWR_REGISTRY: ${{ secrets.SWR_REGISTRY }}
-      SWR_USERNAME: ${{ secrets.SWR_USERNAME }}
-      SWR_PASSWORD: ${{ secrets.SWR_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,19 +34,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to SWR (optional)
-        if: ${{ env.SWR_REGISTRY != '' && env.SWR_USERNAME != '' && env.SWR_PASSWORD != '' }}
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.SWR_REGISTRY }}
-          username: ${{ env.SWR_USERNAME }}
-          password: ${{ env.SWR_PASSWORD }}
-
-      - name: Warn when SWR secrets are missing
-        if: ${{ env.SWR_REGISTRY == '' || env.SWR_USERNAME == '' || env.SWR_PASSWORD == '' }}
-        run: |
-          echo "::warning::SWR 登录已跳过：未配置 SWR_REGISTRY / SWR_USERNAME / SWR_PASSWORD。"
-          echo "::warning::若基础镜像仓库需要鉴权，构建会在拉取 FROM 镜像阶段返回 401。"
+      - name: Validate public base image (readonly)
+        run: docker manifest inspect "${{ env.BASE_IMAGE }}" > /dev/null
 
       - name: Extract Docker metadata
         id: meta
