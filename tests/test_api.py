@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -102,3 +103,62 @@ def test_create_app_requires_existing_model_directory(tmp_path: Path) -> None:
 
     with pytest.raises(FileNotFoundError):
         create_app(model_dir=missing_model_dir)
+
+
+def test_asr_returns_structured_error_when_command_cannot_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    monkeypatch.setenv("ASR_UPLOAD_DIR", str(tmp_path / "uploads"))
+
+    app = create_app(model_dir=model_dir)
+    client = TestClient(app)
+
+    def fake_run(_: list[str], capture_output: bool, text: bool, timeout: int) -> object:
+        raise FileNotFoundError("python3 not found")
+
+    monkeypatch.setattr("server.app.subprocess.run", fake_run)
+
+    response = client.post(
+        "/asr",
+        files={"audio_file": ("cannot-start.wav", b"RIFF....", "audio/wav")},
+    )
+
+    assert response.status_code == 502
+    body = response.json()
+    assert body["code"] == "INFERENCE_COMMAND_FAILED"
+    assert "python3 not found" in body["message"]
+
+
+def test_asr_timeout_response_not_overridden_by_cleanup_unlink_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    monkeypatch.setenv("ASR_UPLOAD_DIR", str(tmp_path / "uploads"))
+
+    app = create_app(model_dir=model_dir)
+    client = TestClient(app)
+
+    def fake_run(_: list[str], capture_output: bool, text: bool, timeout: int) -> object:
+        raise subprocess.TimeoutExpired(cmd=["python3", "infer.py"], timeout=timeout)
+
+    original_unlink = Path.unlink
+
+    def fake_unlink(self: Path, *args: object, **kwargs: object) -> None:
+        if self.suffix == ".wav":
+            raise OSError("mocked unlink failure")
+        original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr("server.app.subprocess.run", fake_run)
+    monkeypatch.setattr("pathlib.Path.unlink", fake_unlink)
+
+    response = client.post(
+        "/asr",
+        files={"audio_file": ("timeout.wav", b"RIFF....", "audio/wav")},
+    )
+
+    assert response.status_code == 504
+    body = response.json()
+    assert body["code"] == "INFERENCE_COMMAND_TIMEOUT"

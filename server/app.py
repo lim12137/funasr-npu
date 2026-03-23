@@ -73,7 +73,10 @@ def create_app(model_dir: str | Path | None = None) -> FastAPI:
             )
         finally:
             if temp_audio_path.exists():
-                temp_audio_path.unlink()
+                try:
+                    temp_audio_path.unlink()
+                except OSError:
+                    pass
 
         return {
             "code": "OK",
@@ -162,6 +165,8 @@ def _run_asr_command(
         )
     except subprocess.TimeoutExpired as exc:
         raise TimeoutError(f"推理命令超时（>{timeout_seconds}s）: {' '.join(command)}") from exc
+    except OSError as exc:
+        raise RuntimeError(f"推理命令启动失败: {exc}") from exc
 
     if completed.returncode != 0:
         stderr_text = (completed.stderr or "").strip()
