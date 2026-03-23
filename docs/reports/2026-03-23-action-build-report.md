@@ -9,4 +9,76 @@
 
 ## 验证命令与结果摘要
 
-> 执行结果在下方按时间更新。
+### 1) 仓库状态与关键文件
+
+```bash
+git -C D:/Agent/work/funasr-npu status --short --branch
+```
+
+结果：`## main...origin/main`（工作区干净）
+
+```bash
+Test-Path D:/Agent/work/funasr-npu/Dockerfile
+Test-Path D:/Agent/work/funasr-npu/.dockerignore
+Test-Path D:/Agent/work/funasr-npu/.github/workflows/build-and-push-ghcr.yml
+Test-Path D:/Agent/work/funasr-npu/README.md
+Test-Path D:/Agent/work/funasr-npu/docs/plans/2026-03-23-ghcr-image-plan.md
+Test-Path D:/Agent/work/funasr-npu/docs/reports/2026-03-23-action-build-report.md
+```
+
+结果：全部 `True`
+
+### 2) 工具可用性检查
+
+```bash
+docker --version
+actionlint --version
+gh --version
+```
+
+结果摘要：
+
+- `docker`：存在（`Docker version 28.0.1`）
+- `actionlint`：未安装
+- `gh`：存在（`gh version 2.88.1`）
+
+### 3) 本地 Docker 可行性验证
+
+```bash
+docker build -t funasr-npu:local D:/Agent/work/funasr-npu
+```
+
+结果：失败，当前环境未运行 Docker daemon（`open //./pipe/docker_engine: The system cannot find the file specified`）。
+
+### 4) Git 推送验证
+
+```bash
+git -C D:/Agent/work/funasr-npu push -u origin main
+```
+
+结果：成功，`main` 已推送并跟踪 `origin/main`。
+
+### 5) GitHub Actions 触发与运行摘要
+
+```bash
+gh workflow list
+gh run list --workflow "Build and Push GHCR Image" --limit 5
+gh workflow run "Build and Push GHCR Image" --ref main
+gh run view 23419933138 --json databaseId,event,status,conclusion,url
+gh run view 23419947265 --json databaseId,event,status,conclusion,url
+```
+
+结果摘要：
+
+- `push` 触发 run：`23419933138`，状态 `completed/failure`
+- `workflow_dispatch` 手动触发 run：`23419947265`，状态 `completed/failure`
+
+失败根因（摘录）：
+
+```text
+ERROR: failed to build: failed to solve:
+swr.cn-south-1.myhuaweicloud.com/ascendhub/ascend-runtime:8.0.rc1-910B-ubuntu22.04:
+failed to fetch anonymous token ... 401 Unauthorized
+```
+
+结论：Workflow 编排、登录 GHCR、标签生成逻辑均可执行；当前阻塞在基础镜像仓库 `swr.cn-south-1.myhuaweicloud.com` 的匿名拉取鉴权失败。
