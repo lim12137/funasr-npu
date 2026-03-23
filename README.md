@@ -10,7 +10,7 @@
 docker compose up --build -d
 ```
 
-> 默认使用 `compose.yaml` 的单卡配置，映射端口 `8000:8000`，并挂载宿主机 `./models` 到容器 `/models`（只读）。
+> 默认使用 `compose.yaml` 的单卡配置，映射端口 `8000:8000`，并挂载宿主机 `./models` 到容器 `/models`（只读）。启动前宿主机必须存在 `./models` 目录（可为空）；若目录不存在，挂载失败会导致服务启动失败。
 
 ## API 调用示例
 
