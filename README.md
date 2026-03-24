@@ -4,7 +4,7 @@
 
 ## 上游路线变更说明（2026-03-23）
 
-- `D:/Agent/deepseek/技能/docs/todo.txt` 中“`infer.py` + `download_model.py` + `li-plus/llama.cpp@ascend-backend`”路线已过期。
+- 早期待办记录中的“`infer.py` + `download_model.py` + `li-plus/llama.cpp@ascend-backend`”路线已过期。
 - 复核结果：
   - `HaujetZhao/Fun-ASR-GGUF` 当前 `HEAD=02c11cb...` 不存在 `infer.py`、`download_model.py`；
   - `li-plus/llama.cpp` 当前无 `ascend-backend` 分支。
