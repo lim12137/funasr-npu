@@ -18,7 +18,7 @@
 docker compose up --build -d
 ```
 
-> 默认配置映射端口 `8000:8000`，并挂载宿主机 `./models` 到容器 `/models`（只读）。启动前宿主机必须存在 `./models` 目录（可为空）；若目录不存在，挂载失败会导致服务启动失败。模型文件布局详见 `docs/model-layout.md`。
+> 默认配置映射端口 `8000:8000`，并挂载宿主机 `./models` 到容器 `/models`（只读）。启动前宿主机必须存在 `./models` 目录（可为空）；若目录不存在，挂载失败会导致服务启动失败。模型来源与准备流程见 `docs/model-source.md`，模型文件布局详见 `docs/model-layout.md`。
 
 ## `/asr` 真实推理调用示例
 
@@ -60,6 +60,7 @@ curl -X POST http://127.0.0.1:8000/asr \
 
 - 宿主机 `./models` 目录必须存在（Compose 会将其挂载到容器 `/models`）。
 - 当前代码默认从 `/models` 读取模型文件；目录缺失时服务启动即失败。
+- 模型来源、官方导出流程与落地命令见 `docs/model-source.md`。
 - 详细文件清单、候选优先级、目录示例与错误排查见 `docs/model-layout.md`。
 
 ## Compose 默认配置说明

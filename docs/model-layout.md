@@ -2,6 +2,8 @@
 
 本文档对应当前仓库实现（`server/app.py` + `scripts/run-funasr-infer.py`），用于说明 `MODEL_DIR`（默认 `/models`）下的文件布局要求。
 
+如需查看“模型文件从哪里来、如何按上游官方流程生成并放入 `./models`”，请先阅读 `model-source.md`。
+
 ## 最小必需文件清单
 
 在默认配置下，模型目录至少需要以下 4 类文件（每类命中一个即可）：
