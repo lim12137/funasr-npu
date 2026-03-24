@@ -18,7 +18,7 @@
 docker compose up --build -d
 ```
 
-> 默认配置映射端口 `8000:8000`，并挂载宿主机 `./models` 到容器 `/models`（只读）。启动前宿主机必须存在 `./models` 目录（可为空）；若目录不存在，挂载失败会导致服务启动失败。模型来源与准备流程见 `docs/model-source.md`，模型文件布局详见 `docs/model-layout.md`。
+> 默认配置映射端口 `8000:8000`，并挂载宿主机 `./models` 到容器 `/models`（只读）。启动前宿主机必须存在 `./models` 目录（可为空）；若目录不存在，挂载失败会导致服务启动失败。模型来源与准备流程见 [docs/model-source.md](docs/model-source.md)，模型文件布局详见 [docs/model-layout.md](docs/model-layout.md)。
 
 ## `/asr` 真实推理调用示例
 
@@ -60,8 +60,8 @@ curl -X POST http://127.0.0.1:8000/asr \
 
 - 宿主机 `./models` 目录必须存在（Compose 会将其挂载到容器 `/models`）。
 - 当前代码默认从 `/models` 读取模型文件；目录缺失时服务启动即失败。
-- 模型来源、官方导出流程与落地命令见 `docs/model-source.md`。
-- 详细文件清单、候选优先级、目录示例与错误排查见 `docs/model-layout.md`。
+- 模型来源、官方导出流程与落地命令见 [docs/model-source.md](docs/model-source.md)。
+- 详细文件清单、候选优先级、目录示例与错误排查见 [docs/model-layout.md](docs/model-layout.md)。
 
 ## Compose 默认配置说明
 
@@ -74,6 +74,16 @@ curl -X POST http://127.0.0.1:8000/asr \
   - `ASR_COMMAND_TIMEOUT_SECONDS=600`
   - `ASR_UPLOAD_DIR=/tmp/funasr-upload`
   - `PORT=8000`
+
+## 关键环境变量（当前代码）
+
+以下变量由 `server/app.py` 读取，且在镜像构建时由 `Dockerfile` 提供默认值（`compose.yaml` 可覆盖其中部分）：
+
+- `FUNASR_REPO_DIR`：默认 `/workspace/Fun-ASR-GGUF`。服务会把它作为 `--repo-dir` 传给 `scripts/run-funasr-infer.py`，应指向上游 Fun-ASR-GGUF 仓库目录。
+- `ASR_INFER_SCRIPT`：默认 `/workspace/scripts/run-funasr-infer.py`。用于指定外部推理脚本路径。
+- `ASR_PYTHON_BIN`：默认 `python3`。用于启动外部推理脚本的 Python 可执行文件。
+- `ASR_VULKAN_ENABLE`：默认不设置。若设置该变量，服务会向推理脚本追加 `--vulkan-enable <值>` 参数。
+- `ASR_COMMAND_TIMEOUT_SECONDS`：默认 `600`。服务通过 `subprocess.run(..., timeout=...)` 限制推理命令时长，超时返回 `INFERENCE_COMMAND_TIMEOUT`（HTTP 504）。
 
 ## llama.cpp CANN 现状与对齐
 

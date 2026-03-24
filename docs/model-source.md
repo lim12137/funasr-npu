@@ -90,7 +90,10 @@ git checkout 02c11cb093af8e01bc6f4580639b3663a41b74c0
 
 ### 2) 按官方 README 执行模型下载与导出
 
+> 重要：以下“官方导出命令”必须在上游仓库目录 `D:/Agent/work/Fun-ASR-GGUF` 执行，而不是在本仓库 `D:/Agent/work/funasr-npu` 执行。
+
 ```powershell
+Set-Location D:/Agent/work/Fun-ASR-GGUF
 pip install -r requirements.txt
 pip install modelscope
 modelscope download --model FunAudioLLM/Fun-ASR-Nano-2512
