@@ -113,3 +113,31 @@ pytest -q
 ..............                                                           [100%]
 14 passed in 1.27s
 ```
+
+## 追加回归（2026-03-25，CPU/NPU provider 环境变量）
+命令：
+
+```bash
+pytest -q
+```
+
+关键输出：
+
+```text
+..............                                                           [100%]
+14 passed in 1.28s
+```
+
+变更点摘要：
+- `ASR_ONNX_PROVIDER` 支持 `CPU/NPU`，并在 NPU 不可用时显式报错（打印 `onnxruntime.get_available_providers()`）。
+
+补充调研结论：
+- Ascend 对应 ONNX Runtime EP 名称：`CANNExecutionProvider`
+- Python wheel 建议：`onnxruntime-cann`
+- 上游 `Fun-ASR-GGUF@02c11cb` 未内置 CANN provider 映射：当前通过本仓库 `scripts/run-funasr-infer.py` 的 runtime monkeypatch 接入（或改上游实现）
+
+验证命令（在目标运行环境执行）：
+
+```bash
+python -c "import onnxruntime as ort; print(ort.__version__); print(ort.get_available_providers())"
+```

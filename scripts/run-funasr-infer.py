@@ -16,7 +16,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--audio-path", required=True, help="Input audio file path")
     parser.add_argument("--language", default=None, help="Language hint")
     parser.add_argument("--context", default=None, help="Optional context prompt")
-    parser.add_argument("--onnx-provider", default="CPU", help="ONNX provider (e.g. CPU/CUDA/DML)")
+    parser.add_argument(
+        "--onnx-provider",
+        default=None,
+        help="ONNX provider (CPU/NPU/CUDA/DML/TRT). If omitted, use env ASR_ONNX_PROVIDER (default CPU).",
+    )
     parser.add_argument("--vulkan-enable", default="1", help="Whether to enable GPU path in llama backend")
     parser.add_argument("--encoder", default=None, help="Override encoder model path")
     parser.add_argument("--ctc", default=None, help="Override ctc model path")
@@ -47,6 +51,111 @@ def _parse_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _resolve_onnx_provider(cli_value: str | None) -> str:
+    if cli_value and cli_value.strip():
+        return cli_value.strip()
+    env_value = os.getenv("ASR_ONNX_PROVIDER")
+    if env_value and env_value.strip():
+        return env_value.strip()
+    return "CPU"
+
+
+def _resolve_npu_execution_provider() -> str:
+    return (os.getenv("ASR_NPU_EXECUTION_PROVIDER") or "CANNExecutionProvider").strip() or "CANNExecutionProvider"
+
+
+def _normalize_provider(value: str) -> str:
+    return value.strip().upper()
+
+
+def _wants_npu_provider(provider: str) -> bool:
+    normalized = _normalize_provider(provider)
+    return normalized in {"NPU", "ASCEND", "CANN", "CANNEXECUTIONPROVIDER"}
+
+
+def _ensure_onnxruntime_provider_available(target_provider: str) -> list[str]:
+    try:
+        import onnxruntime
+    except ImportError as exc:  # pragma: no cover - runtime only
+        raise RuntimeError(f"未安装 onnxruntime（无法选择 {target_provider}）: {exc}") from exc
+
+    try:
+        available = list(onnxruntime.get_available_providers())
+    except Exception as exc:  # pragma: no cover - runtime only
+        raise RuntimeError(f"读取 onnxruntime providers 失败: {exc}") from exc
+
+    if target_provider not in available:
+        raise RuntimeError(
+            f"请求使用 {target_provider} 但运行时不可用。onnxruntime.get_available_providers()={available}"
+        )
+
+    return available
+
+
+def _patch_funasr_gguf_for_npu(npu_ep: str) -> None:
+    import onnxruntime
+
+    from fun_asr_gguf.inference import ctc_decoder as ctc_decoder_module
+    from fun_asr_gguf.inference import encoder as encoder_module
+
+    if getattr(encoder_module.AudioEncoder, "_funasr_npu_patched", False):
+        return
+
+    original_encoder_initialize = encoder_module.AudioEncoder._initialize_session
+    original_ctc_initialize = ctc_decoder_module.CTCDecoder._initialize_session
+
+    def encoder_initialize_session(self) -> None:  # type: ignore[no-untyped-def]
+        if self.onnx_provider not in {"NPU", "ASCEND", "CANN", "CANNEXECUTIONPROVIDER"}:
+            return original_encoder_initialize(self)
+
+        session_opts = onnxruntime.SessionOptions()
+        session_opts.add_session_config_entry("session.intra_op.allow_spinning", "0")
+        session_opts.add_session_config_entry("session.inter_op.allow_spinning", "0")
+        session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+        try:
+            self.dml_pad_to = min(int(getattr(self, "dml_pad_to", 0)), 1)
+        except Exception:
+            self.dml_pad_to = 1
+
+        providers = [npu_ep, "CPUExecutionProvider"]
+        encoder_module.logger.info(
+            f"[Encoder] 加载模型: {os.path.basename(self.model_path)} (Providers: {providers})"
+        )
+
+        self.sess = onnxruntime.InferenceSession(self.model_path, sess_options=session_opts, providers=providers)
+
+        in_type = self.sess.get_inputs()[0].type
+        self.input_dtype = encoder_module.np.float16 if "float16" in in_type else encoder_module.np.float32
+        self.warmup()
+
+    def ctc_initialize_session(self) -> None:  # type: ignore[no-untyped-def]
+        if self.onnx_provider not in {"NPU", "ASCEND", "CANN", "CANNEXECUTIONPROVIDER"}:
+            return original_ctc_initialize(self)
+
+        session_opts = onnxruntime.SessionOptions()
+        session_opts.add_session_config_entry("session.intra_op.allow_spinning", "0")
+        session_opts.add_session_config_entry("session.inter_op.allow_spinning", "0")
+        session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+        try:
+            self.dml_pad_to = min(int(getattr(self, "dml_pad_to", 0)), 1)
+        except Exception:
+            self.dml_pad_to = 1
+
+        providers = [npu_ep, "CPUExecutionProvider"]
+        ctc_decoder_module.logger.info(f"[CTC] 加载模型: {os.path.basename(self.model_path)} (Providers: {providers})")
+
+        self.sess = onnxruntime.InferenceSession(self.model_path, sess_options=session_opts, providers=providers)
+
+        in_type = self.sess.get_inputs()[0].type
+        self.input_dtype = ctc_decoder_module.np.float16 if "float16" in in_type else ctc_decoder_module.np.float32
+
+    encoder_module.AudioEncoder._initialize_session = encoder_initialize_session
+    ctc_decoder_module.CTCDecoder._initialize_session = ctc_initialize_session
+    encoder_module.AudioEncoder._funasr_npu_patched = True
+
+
 def main() -> int:
     args = parse_args()
     repo_dir = Path(args.repo_dir).resolve()
@@ -67,6 +176,18 @@ def main() -> int:
     os.chdir(repo_dir)
 
     from fun_asr_gguf import ASREngineConfig, FunASREngine
+
+    resolved_provider = _resolve_onnx_provider(args.onnx_provider)
+    normalized_provider = _normalize_provider(resolved_provider)
+    if _wants_npu_provider(normalized_provider):
+        npu_ep = _resolve_npu_execution_provider()
+        try:
+            _ensure_onnxruntime_provider_available(npu_ep)
+        except RuntimeError as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return 3
+        _patch_funasr_gguf_for_npu(npu_ep)
+        normalized_provider = "NPU"
 
     encoder_onnx_path = _resolve_first_existing(
         model_dir,
@@ -103,7 +224,7 @@ def main() -> int:
         decoder_gguf_path=decoder_gguf_path,
         tokens_path=tokens_path,
         hotwords=hotwords,
-        onnx_provider=args.onnx_provider,
+        onnx_provider=normalized_provider,
         vulkan_enable=_parse_bool(args.vulkan_enable),
         verbose=False,
     )

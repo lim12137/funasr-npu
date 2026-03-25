@@ -95,7 +95,8 @@ curl -X POST http://127.0.0.1:8000/asr \
 - 设备映射：`/dev/davinci0`、`/dev/davinci_manager`、`/dev/devmm_svm`、`/dev/hisi_hdc`
 - 关键环境变量：
   - `MODEL_DIR=/models`
-  - `ASR_ONNX_PROVIDER=CPU`
+  - `ASR_ONNX_PROVIDER=CPU`（可选 `NPU`；NPU 模式要求 onnxruntime 支持 `CANNExecutionProvider`，否则推理脚本会报错并打印 `onnxruntime.get_available_providers()`）
+  - `ASR_NPU_EXECUTION_PROVIDER=CANNExecutionProvider`（可选，默认 `CANNExecutionProvider`）
   - `ASR_COMMAND_TIMEOUT_SECONDS=600`
   - `ASR_UPLOAD_DIR=/tmp/funasr-upload`
   - `PORT=8000`
