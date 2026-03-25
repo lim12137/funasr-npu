@@ -141,3 +141,34 @@ pytest -q
 ```bash
 python -c "import onnxruntime as ort; print(ort.__version__); print(ort.get_available_providers())"
 ```
+
+## 追加回归（2026-03-25，镜像多 target / CPU-NPU）
+
+回归命令：
+
+```bash
+pytest -q
+```
+
+关键输出：
+
+```text
+..............                                                           [100%]
+14 passed in 1.45s
+```
+
+本次构建 tag 规则：
+- NPU：`main` / `latest` / `sha-<shortsha>`
+- CPU：`main-cpu` / `cpu-latest` / `sha-<shortsha>-cpu`
+
+CI 结果核验：
+
+```bash
+gh run list --limit 5
+gh run watch 23543379146 --exit-status
+```
+
+结果摘要：
+- Actions Run ID：`23543379146`
+- Workflow：`Build and Push GHCR Image`
+- 结论：`success`（build-and-push 约 19m11s）
