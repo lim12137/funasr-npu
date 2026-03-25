@@ -9,7 +9,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: lim12137/funasr-npu
-  BASE_IMAGE: ascendai/cann:8.5.0-910b-ubuntu22.04-py3.11
+  NPU_BASE_IMAGE: ascendai/cann:8.5.0-910b-ubuntu22.04-py3.11
 
 jobs:
   build-and-push:
@@ -35,10 +35,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate public base image (readonly)
-        run: docker manifest inspect "${{ env.BASE_IMAGE }}" > /dev/null
+        run: docker manifest inspect "${{ env.NPU_BASE_IMAGE }}" > /dev/null
 
-      - name: Extract Docker metadata
-        id: meta
+      - name: Extract Docker metadata (npu)
+        id: meta_npu
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
@@ -47,14 +47,38 @@ jobs:
             type=ref,event=branch
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push
+      - name: Build and push (npu)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
+          target: npu
           platforms: linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta_npu.outputs.tags }}
+          labels: ${{ steps.meta_npu.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract Docker metadata (cpu)
+        id: meta_cpu
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,suffix=-cpu
+            type=ref,event=branch,suffix=-cpu
+            type=raw,value=cpu-latest,enable={{is_default_branch}}
+
+      - name: Build and push (cpu)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: cpu
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta_cpu.outputs.tags }}
+          labels: ${{ steps.meta_cpu.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

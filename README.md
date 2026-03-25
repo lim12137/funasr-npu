@@ -12,10 +12,20 @@
 
 ## 一条命令启动
 
+### NPU（默认）
+
 在仓库根目录执行：
 
 ```bash
 docker compose up --build -d
+```
+
+### CPU
+
+CPU 环境请改用 `compose.cpu.yaml`：
+
+```bash
+docker compose -f compose.cpu.yaml up --build -d
 ```
 
 > 默认配置映射端口 `8000:8000`，并挂载宿主机 `./models` 到容器 `/models`（只读）。启动前宿主机必须存在 `./models` 目录（可为空）；若目录不存在，挂载失败会导致服务启动失败。模型来源与准备流程见 [docs/model-source.md](docs/model-source.md)，模型文件布局详见 [docs/model-layout.md](docs/model-layout.md)。
@@ -95,7 +105,7 @@ curl -X POST http://127.0.0.1:8000/asr \
 - 设备映射：`/dev/davinci0`、`/dev/davinci_manager`、`/dev/devmm_svm`、`/dev/hisi_hdc`
 - 关键环境变量：
   - `MODEL_DIR=/models`
-  - `ASR_ONNX_PROVIDER=CPU`（可选 `NPU`；NPU 模式要求 onnxruntime 支持 `CANNExecutionProvider`，否则推理脚本会报错并打印 `onnxruntime.get_available_providers()`）
+  - `ASR_ONNX_PROVIDER=NPU`（可选 `CPU`；NPU 模式要求 onnxruntime 支持 `CANNExecutionProvider`，否则推理脚本会报错并打印 `onnxruntime.get_available_providers()`）
   - `ASR_NPU_EXECUTION_PROVIDER=CANNExecutionProvider`（可选，默认 `CANNExecutionProvider`）
   - `ASR_COMMAND_TIMEOUT_SECONDS=600`
   - `ASR_UPLOAD_DIR=/tmp/funasr-upload`
@@ -128,3 +138,6 @@ curl -X POST http://127.0.0.1:8000/asr \
 
 - 基础镜像：`ascendai/cann:8.5.0-910b-ubuntu22.04-py3.11`
 - GHCR：`ghcr.io/lim12137/funasr-npu`
+- 镜像 tag 选择：
+  - NPU：`main` / `latest` / `sha-<shortsha>`
+  - CPU：`main-cpu` / `cpu-latest` / `sha-<shortsha>-cpu`

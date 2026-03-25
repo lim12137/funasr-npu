@@ -3,14 +3,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: npu
-    image: funasr-npu:local
-    container_name: funasr-npu-api
+      target: cpu
+    image: funasr-npu:cpu-local
+    container_name: funasr-npu-api-cpu
     restart: unless-stopped
     environment:
       MODEL_DIR: /models
       PORT: "8000"
-      ASR_ONNX_PROVIDER: NPU # CPU or NPU
+      ASR_ONNX_PROVIDER: CPU
       ASR_COMMAND_TIMEOUT_SECONDS: "600"
       ASR_UPLOAD_DIR: /tmp/funasr-upload
     ports:
@@ -18,8 +18,3 @@ services:
       - "10095:8000"
     volumes:
       - ./models:/models:ro
-    devices:
-      - /dev/davinci0:/dev/davinci0
-      - /dev/davinci_manager:/dev/davinci_manager
-      - /dev/devmm_svm:/dev/devmm_svm
-      - /dev/hisi_hdc:/dev/hisi_hdc

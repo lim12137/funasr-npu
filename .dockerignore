@@ -1,7 +1,15 @@
 .git
 .github
 docs
+tests
+.pytest_cache
+models
 README.md
 *.log
 *.tmp
 *.swp
+*.onnx
+*.gguf
+*.wav
+*.mp3
+*.m4a
