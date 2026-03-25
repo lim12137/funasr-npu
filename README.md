@@ -100,6 +100,13 @@ curl -X POST http://127.0.0.1:8000/asr \
   - `ASR_UPLOAD_DIR=/tmp/funasr-upload`
   - `PORT=8000`
 
+## Uvicorn Workers（多进程）
+
+- 通过环境变量 `UVICORN_WORKERS` 配置 Uvicorn 多进程 workers，最大 4。
+- 空字符串/全空白视为未设置，默认 `4`。
+- 非整数会直接报错退出；`<=0` 视为 `1`，`>=4` 视为 `4`。
+- 示例：`UVICORN_WORKERS=2 docker compose up --build -d`
+
 ## 关键环境变量（当前代码）
 
 以下变量由 `server/app.py` 读取，且在镜像构建时由 `Dockerfile` 提供默认值（`compose.yaml` 可覆盖其中部分）：

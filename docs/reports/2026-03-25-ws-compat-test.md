@@ -99,3 +99,17 @@ pytest -q
 新增覆盖点摘要：
 - HTTP `/asr` 非 WAV 文件经 `ffmpeg` 自动转码为 WAV
 - WebSocket `wav_format=mp3` 先落盘再转码进入推理链路
+
+## workers 变更回归
+命令：
+
+```bash
+pytest -q
+```
+
+关键输出：
+
+```text
+..............                                                           [100%]
+14 passed in 1.27s
+```
