@@ -1,5 +1,8 @@
+import io
+import json
 import subprocess
 from pathlib import Path
+import wave
 
 import pytest
 from fastapi.testclient import TestClient
@@ -258,3 +261,170 @@ def test_asr_timeout_response_not_overridden_by_cleanup_unlink_failure(
     assert response.status_code == 504
     body = response.json()
     assert body["code"] == "INFERENCE_COMMAND_TIMEOUT"
+
+
+def test_ws_asr_accepts_is_speaking_false_end_frame(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    monkeypatch.setenv("ASR_UPLOAD_DIR", str(tmp_path / "uploads"))
+
+    app = create_app(model_dir=model_dir)
+    client = TestClient(app)
+
+    captured_audio_path: Path | None = None
+
+    def fake_run_asr_command(
+        audio_path: Path,
+        model_dir: Path,
+        language: str | None,
+        context: str | None,
+        onnx_provider: str | None,
+    ) -> dict[str, object]:
+        nonlocal captured_audio_path
+        captured_audio_path = audio_path
+        wav_bytes = audio_path.read_bytes()
+        assert wav_bytes[:4] == b"RIFF"
+        with wave.open(io.BytesIO(wav_bytes), "rb") as wav_reader:
+            assert wav_reader.getnchannels() == 1
+            assert wav_reader.getsampwidth() == 2
+            assert wav_reader.getframerate() == 16000
+            assert wav_reader.readframes(wav_reader.getnframes()) == b"abc123"
+        assert language == "zh"
+        assert context is None
+        assert onnx_provider is None
+        return {"text": "离线识别成功"}
+
+    monkeypatch.setattr("server.app._run_asr_command", fake_run_asr_command)
+
+    with client.websocket_connect("/ws") as websocket:
+        websocket.send_text(
+            json.dumps(
+                {
+                    "mode": "offline",
+                    "wav_name": "demo.wav",
+                    "wav_format": "wav",
+                    "audio_fs": 16000,
+                    "language": "zh",
+                    "hotwords": "阿里巴巴 20",
+                }
+            )
+        )
+        websocket.send_bytes(b"abc")
+        websocket.send_bytes(b"123")
+        websocket.send_text(json.dumps({"is_speaking": False}))
+        result = websocket.receive_json()
+
+    assert result["text"] == "离线识别成功"
+    assert result["mode"] == "offline"
+    assert result["wav_name"] == "demo.wav"
+    assert result["wav_format"] == "wav"
+    assert result["audio_fs"] == 16000
+    assert result["hotwords"] == "阿里巴巴 20"
+    assert captured_audio_path is not None
+    assert not captured_audio_path.exists()
+
+
+def test_ws_asr_accepts_is_finished_true_end_frame(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    monkeypatch.setenv("ASR_UPLOAD_DIR", str(tmp_path / "uploads"))
+
+    app = create_app(model_dir=model_dir)
+    client = TestClient(app)
+
+    def fake_run_asr_command(
+        audio_path: Path,
+        model_dir: Path,
+        language: str | None,
+        context: str | None,
+        onnx_provider: str | None,
+    ) -> dict[str, object]:
+        wav_bytes = audio_path.read_bytes()
+        assert wav_bytes[:4] == b"RIFF"
+        with wave.open(io.BytesIO(wav_bytes), "rb") as wav_reader:
+            assert wav_reader.getnchannels() == 1
+            assert wav_reader.getsampwidth() == 2
+            assert wav_reader.getframerate() == 16000
+            assert wav_reader.readframes(wav_reader.getnframes()) == b"xyzz"
+        return {"text": "finished 帧也能识别"}
+
+    monkeypatch.setattr("server.app._run_asr_command", fake_run_asr_command)
+
+    with client.websocket_connect("/ws") as websocket:
+        websocket.send_text(
+            json.dumps(
+                {
+                    "mode": "offline",
+                    "wav_name": "finished.pcm",
+                    "wav_format": "pcm",
+                    "audio_fs": 16000,
+                    "hotwords": {"北京": 30},
+                }
+            )
+        )
+        websocket.send_bytes(b"xyzz")
+        websocket.send_text(json.dumps({"is_finished": True}))
+        result = websocket.receive_json()
+
+    assert result["text"] == "finished 帧也能识别"
+    assert result["mode"] == "offline"
+    assert result["wav_name"] == "finished.pcm"
+    assert result["hotwords"] == {"北京": 30}
+
+
+def test_ws_root_accepts_binary_subprotocol_and_wraps_pcm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    monkeypatch.setenv("ASR_UPLOAD_DIR", str(tmp_path / "uploads"))
+
+    app = create_app(model_dir=model_dir)
+    client = TestClient(app)
+
+    captured_audio_path: Path | None = None
+
+    def fake_run_asr_command(
+        audio_path: Path,
+        model_dir: Path,
+        language: str | None,
+        context: str | None,
+        onnx_provider: str | None,
+    ) -> dict[str, object]:
+        nonlocal captured_audio_path
+        captured_audio_path = audio_path
+        wav_bytes = audio_path.read_bytes()
+        assert wav_bytes[:4] == b"RIFF"
+        with wave.open(io.BytesIO(wav_bytes), "rb") as wav_reader:
+            assert wav_reader.getnchannels() == 1
+            assert wav_reader.getsampwidth() == 2
+            assert wav_reader.getframerate() == 16000
+            assert wav_reader.readframes(wav_reader.getnframes()) == b"\x01\x02\x03\x04"
+        return {"text": "root pcm ok"}
+
+    monkeypatch.setattr("server.app._run_asr_command", fake_run_asr_command)
+
+    with client.websocket_connect("/", subprotocols=["binary"]) as websocket:
+        assert websocket.accepted_subprotocol == "binary"
+        websocket.send_text(
+            json.dumps(
+                {
+                    "mode": "offline",
+                    "wav_name": "root-raw.pcm",
+                    "wav_format": "pcm",
+                    "audio_fs": 16000,
+                }
+            )
+        )
+        websocket.send_bytes(b"\x01\x02\x03\x04")
+        websocket.send_text(json.dumps({"is_speaking": False}))
+        result = websocket.receive_json()
+
+    assert result["text"] == "root pcm ok"
+    assert result["wav_format"] == "pcm"
+    assert captured_audio_path is not None
+    assert not captured_audio_path.exists()

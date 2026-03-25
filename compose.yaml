@@ -14,6 +14,7 @@ services:
       ASR_UPLOAD_DIR: /tmp/funasr-upload
     ports:
       - "8000:8000"
+      - "10095:8000"
     volumes:
       - ./models:/models:ro
     devices:
