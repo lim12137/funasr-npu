@@ -47,6 +47,7 @@
 
 - 使用二进制帧发送音频数据。
 - 支持分片连续发送，直到结束帧 JSON 发出。
+- 若 `wav_format` 为 `mp3/m4a/aac/mp4`（大小写不敏感），服务端会先落盘并用 `ffmpeg` 转为 `16k/mono PCM WAV` 再推理；`wav_format=others` 且识别到 mp3/m4a 魔数时同样转码。
 
 ## 结束 JSON
 

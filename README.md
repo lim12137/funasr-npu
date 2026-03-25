@@ -56,6 +56,8 @@ curl -X POST http://127.0.0.1:8000/asr \
 - `502`：`INFERENCE_COMMAND_FAILED`（外部命令退出码非 0）
 - `504`：`INFERENCE_COMMAND_TIMEOUT`（命令超时）
 
+`mp3/m4a` 上传会通过 `ffmpeg` 自动转码为 `16k/mono PCM WAV` 后推理。
+
 ## WebSocket 兼容协议（FUNASR_EXTERNAL_API_DOC）
 
 在不影响现有 HTTP `GET /healthz`、`POST /asr` 使用方式的前提下，服务支持与 `FUNASR_EXTERNAL_API_DOC.md` 对齐的 WebSocket 交互约定。完整字段说明见 [docs/external-ws-compat.md](docs/external-ws-compat.md)。

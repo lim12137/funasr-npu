@@ -10,6 +10,16 @@ from fastapi.testclient import TestClient
 from server.app import create_app
 
 
+def _write_minimal_wav(path: Path, sample_rate: int = 16000) -> None:
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_writer:
+        wav_writer.setnchannels(1)
+        wav_writer.setsampwidth(2)
+        wav_writer.setframerate(sample_rate)
+        wav_writer.writeframes(b"\x00\x00")
+    path.write_bytes(buffer.getvalue())
+
+
 def test_healthz_returns_ok(tmp_path: Path) -> None:
     app = create_app(model_dir=tmp_path)
     client = TestClient(app)
@@ -166,6 +176,59 @@ def test_asr_invokes_real_command_and_cleans_temp_file(tmp_path: Path, monkeypat
     assert body["result"]["text"] == "识别成功"
     assert captured_audio_path is not None
     assert not captured_audio_path.exists()
+
+
+def test_asr_converts_non_wav_with_ffmpeg_and_cleans_temp_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    upload_dir = tmp_path / "uploads"
+    monkeypatch.setenv("ASR_UPLOAD_DIR", str(upload_dir))
+
+    app = create_app(model_dir=model_dir)
+    client = TestClient(app)
+
+    converted_path: Path | None = None
+    source_path: Path | None = None
+
+    def fake_convert(src_path: Path, dst_path: Path, sample_rate: int) -> None:
+        nonlocal converted_path, source_path
+        source_path = src_path
+        converted_path = dst_path
+        assert sample_rate == 16000
+        _write_minimal_wav(dst_path, sample_rate)
+
+    captured_audio_path: Path | None = None
+
+    def fake_run_asr_command(
+        audio_path: Path,
+        model_dir: Path,
+        language: str | None,
+        context: str | None,
+        onnx_provider: str | None,
+    ) -> dict[str, object]:
+        nonlocal captured_audio_path
+        captured_audio_path = audio_path
+        assert audio_path.suffix == ".wav"
+        assert audio_path.read_bytes()[:4] == b"RIFF"
+        return {"text": "mp3 ok"}
+
+    monkeypatch.setattr("server.app._convert_to_wav_with_ffmpeg", fake_convert, raising=False)
+    monkeypatch.setattr("server.app._run_asr_command", fake_run_asr_command)
+
+    response = client.post(
+        "/asr",
+        files={"audio_file": ("demo.mp3", b"FAKE_MP3_CONTENT", "audio/mpeg")},
+    )
+
+    assert response.status_code == 200
+    assert captured_audio_path is not None
+    assert converted_path is not None
+    assert source_path is not None
+    assert captured_audio_path == converted_path
+    assert not source_path.exists()
+    assert not converted_path.exists()
 
 
 def test_asr_returns_error_when_command_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -428,3 +491,64 @@ def test_ws_root_accepts_binary_subprotocol_and_wraps_pcm(
     assert result["wav_format"] == "pcm"
     assert captured_audio_path is not None
     assert not captured_audio_path.exists()
+
+
+def test_ws_asr_converts_mp3_with_ffmpeg_and_cleans_temp_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    upload_dir = tmp_path / "uploads"
+    monkeypatch.setenv("ASR_UPLOAD_DIR", str(upload_dir))
+
+    app = create_app(model_dir=model_dir)
+    client = TestClient(app)
+
+    converted_path: Path | None = None
+    source_path: Path | None = None
+
+    def fake_convert(src_path: Path, dst_path: Path, sample_rate: int) -> None:
+        nonlocal converted_path, source_path
+        source_path = src_path
+        converted_path = dst_path
+        assert sample_rate == 16000
+        _write_minimal_wav(dst_path, sample_rate)
+
+    captured_audio_path: Path | None = None
+
+    def fake_run_asr_command(
+        audio_path: Path,
+        model_dir: Path,
+        language: str | None,
+        context: str | None,
+        onnx_provider: str | None,
+    ) -> dict[str, object]:
+        nonlocal captured_audio_path
+        captured_audio_path = audio_path
+        assert audio_path.read_bytes()[:4] == b"RIFF"
+        return {"text": "ws mp3 ok"}
+
+    monkeypatch.setattr("server.app._convert_to_wav_with_ffmpeg", fake_convert, raising=False)
+    monkeypatch.setattr("server.app._run_asr_command", fake_run_asr_command)
+
+    with client.websocket_connect("/ws") as websocket:
+        websocket.send_text(
+            json.dumps(
+                {
+                    "mode": "offline",
+                    "wav_name": "demo.mp3",
+                    "wav_format": "mp3",
+                    "audio_fs": 16000,
+                }
+            )
+        )
+        websocket.send_bytes(b"FAKE_MP3_BYTES")
+        websocket.send_text(json.dumps({"is_finished": True}))
+        result = websocket.receive_json()
+
+    assert result["text"] == "ws mp3 ok"
+    assert converted_path is not None
+    assert source_path is not None
+    assert captured_audio_path == converted_path
+    assert not source_path.exists()
+    assert not converted_path.exists()

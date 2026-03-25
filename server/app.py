@@ -40,6 +40,7 @@ def create_app(model_dir: str | Path | None = None) -> FastAPI:
         upload_dir = Path(os.getenv("ASR_UPLOAD_DIR", "/tmp/funasr-upload")).resolve()
         suffix = Path(audio_file.filename or "").suffix or ".wav"
         temp_audio_path: Path | None = None
+        temp_wav_path: Path | None = None
 
         try:
             upload_dir.mkdir(parents=True, exist_ok=True)
@@ -63,8 +64,16 @@ def create_app(model_dir: str | Path | None = None) -> FastAPI:
             )
 
         try:
+            audio_path = temp_audio_path
+            if temp_audio_path:
+                with temp_audio_path.open("rb") as file_handle:
+                    header = file_handle.read(12)
+                if not _is_riff_wave(header):
+                    temp_wav_path = upload_dir / f"{uuid4().hex}.wav"
+                    _convert_to_wav_with_ffmpeg(temp_audio_path, temp_wav_path, 16000)
+                    audio_path = temp_wav_path
             infer_result = _run_asr_command(
-                audio_path=temp_audio_path,
+                audio_path=audio_path,
                 model_dir=resolved_model_dir,
                 language=language,
                 context=context,
@@ -92,6 +101,11 @@ def create_app(model_dir: str | Path | None = None) -> FastAPI:
             if temp_audio_path and temp_audio_path.exists():
                 try:
                     temp_audio_path.unlink()
+                except OSError:
+                    pass
+            if temp_wav_path and temp_wav_path.exists():
+                try:
+                    temp_wav_path.unlink()
                 except OSError:
                     pass
 
@@ -202,7 +216,40 @@ def _parse_audio_fs(payload: dict[str, object]) -> int:
 
 
 def _is_riff_wave(payload: bytes) -> bool:
-    return len(payload) >= 12 and payload[:4] == b"RIFF" and payload[8:12] == b"WAVE"
+    if len(payload) < 4:
+        return False
+    if payload[:4] != b"RIFF":
+        return False
+    if len(payload) >= 12:
+        return payload[8:12] == b"WAVE"
+    return True
+
+
+def _normalize_wav_format(value: str | None) -> str:
+    if not value:
+        return "wav"
+    normalized = value.strip().lower()
+    if not normalized:
+        return "wav"
+    if normalized in {"wave", "wav"}:
+        return "wav"
+    if normalized in {"pcm", "raw", "s16le", "pcm_s16le"}:
+        return "pcm"
+    if normalized in {"mp4", "m4a", "aac"}:
+        return "m4a"
+    if normalized == "mp3":
+        return "mp3"
+    return normalized
+
+
+def _detect_audio_format(payload: bytes) -> str | None:
+    if len(payload) >= 3 and payload[:3] == b"ID3":
+        return "mp3"
+    if len(payload) >= 2 and payload[0] == 0xFF and (payload[1] & 0xE0) == 0xE0:
+        return "mp3"
+    if len(payload) >= 12 and payload[4:8] == b"ftyp":
+        return "m4a"
+    return None
 
 
 def _wrap_pcm_to_wav(payload: bytes, audio_fs: int) -> bytes:
@@ -213,6 +260,37 @@ def _wrap_pcm_to_wav(payload: bytes, audio_fs: int) -> bytes:
         wav_writer.setframerate(audio_fs)
         wav_writer.writeframes(payload)
     return buffer.getvalue()
+
+
+def _convert_to_wav_with_ffmpeg(src_path: Path, dst_path: Path, sample_rate: int) -> None:
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(src_path),
+        "-ac",
+        "1",
+        "-ar",
+        str(sample_rate),
+        "-acodec",
+        "pcm_s16le",
+        str(dst_path),
+    ]
+    timeout_seconds = int(os.getenv("ASR_COMMAND_TIMEOUT_SECONDS", "600"))
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"ffmpeg 启动失败: {exc}") from exc
+    if completed.returncode != 0:
+        stderr_text = (completed.stderr or "").strip()
+        stdout_text = (completed.stdout or "").strip()
+        reason = stderr_text or stdout_text or "无输出"
+        raise RuntimeError(f"ffmpeg 转码失败（exit={completed.returncode}）: {reason}")
 
 
 def _coerce_to_bool(value: object) -> bool | None:
@@ -252,7 +330,8 @@ async def _handle_ws_asr(websocket: WebSocket, model_dir: Path) -> None:
     subprotocol = _select_ws_subprotocol(websocket)
     await websocket.accept(subprotocol=subprotocol)
 
-    temp_audio_path: Path | None = None
+    source_audio_path: Path | None = None
+    temp_wav_path: Path | None = None
     ws_config: dict[str, object] = {}
     audio_buffer = bytearray()
 
@@ -263,6 +342,7 @@ async def _handle_ws_asr(websocket: WebSocket, model_dir: Path) -> None:
         wav_format = str(ws_config.get("wav_format") or Path(wav_name).suffix.lstrip(".") or "wav")
         mode = str(ws_config.get("mode") or "offline")
         audio_fs = _parse_audio_fs(ws_config)
+        normalized_format = _normalize_wav_format(wav_format)
 
         while True:
             frame = await websocket.receive()
@@ -300,10 +380,28 @@ async def _handle_ws_asr(websocket: WebSocket, model_dir: Path) -> None:
         audio_bytes = bytes(audio_buffer)
         if _is_riff_wave(audio_bytes):
             payload = audio_bytes
+            source_audio_path = upload_dir / f"{uuid4().hex}.wav"
+            source_audio_path.write_bytes(payload)
+            audio_path = source_audio_path
         else:
-            payload = _wrap_pcm_to_wav(audio_bytes, audio_fs)
-        temp_audio_path = upload_dir / f"{uuid4().hex}.wav"
-        temp_audio_path.write_bytes(payload)
+            detected_format = _detect_audio_format(audio_bytes)
+            compressed_format: str | None = None
+            if normalized_format in {"mp3", "m4a"}:
+                compressed_format = normalized_format
+            elif normalized_format not in {"wav", "pcm"} and detected_format in {"mp3", "m4a"}:
+                compressed_format = detected_format
+            if compressed_format:
+                source_suffix = ".mp3" if compressed_format == "mp3" else ".m4a"
+                source_audio_path = upload_dir / f"{uuid4().hex}{source_suffix}"
+                source_audio_path.write_bytes(audio_bytes)
+                temp_wav_path = upload_dir / f"{uuid4().hex}.wav"
+                _convert_to_wav_with_ffmpeg(source_audio_path, temp_wav_path, audio_fs)
+                audio_path = temp_wav_path
+            else:
+                payload = _wrap_pcm_to_wav(audio_bytes, audio_fs)
+                source_audio_path = upload_dir / f"{uuid4().hex}.wav"
+                source_audio_path.write_bytes(payload)
+                audio_path = source_audio_path
     except OSError as exc:
         await websocket.send_json(
             {"code": "UPLOAD_IO_FAILED", "message": f"音频落盘失败: {exc}", "engine": ENGINE_NAME}
@@ -317,7 +415,7 @@ async def _handle_ws_asr(websocket: WebSocket, model_dir: Path) -> None:
 
     try:
         infer_result = _run_asr_command(
-            audio_path=temp_audio_path,
+            audio_path=audio_path,
             model_dir=model_dir,
             language=language,
             context=context,
@@ -336,9 +434,14 @@ async def _handle_ws_asr(websocket: WebSocket, model_dir: Path) -> None:
         await websocket.close(code=1011)
         return
     finally:
-        if temp_audio_path and temp_audio_path.exists():
+        if source_audio_path and source_audio_path.exists():
             try:
-                temp_audio_path.unlink()
+                source_audio_path.unlink()
+            except OSError:
+                pass
+        if temp_wav_path and temp_wav_path.exists():
+            try:
+                temp_wav_path.unlink()
             except OSError:
                 pass
 
